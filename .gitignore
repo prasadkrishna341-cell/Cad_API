@@ -1,0 +1,27 @@
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+
+# Runtime state (access tokens, db, caches, logs)
+.kitealgo/
+*.db
+*.sqlite3
+logs/
+data_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+build/
+dist/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
