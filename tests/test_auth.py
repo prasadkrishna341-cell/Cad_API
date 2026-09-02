@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timedelta
 
 import pytest
@@ -66,10 +67,41 @@ def test_corrupt_cache_is_ignored_not_fatal(settings):
     assert store.load() is None
 
 
-def test_token_file_is_owner_readable_only(settings):
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX mode bits are not meaningful on Windows; see the ACL test below",
+)
+def test_token_file_is_owner_readable_only_on_posix(settings):
     store = TokenStore(settings)
     store.save("tok-123")
     assert store.path.stat().st_mode & 0o077 == 0
+
+
+def test_saving_a_token_hardens_its_permissions(settings, monkeypatch):
+    """Whatever the platform, save() must attempt to lock the file down.
+
+    The mechanism differs (chmod on POSIX, icacls on Windows) but the token
+    grants full account access either way, so the call must always happen.
+    """
+    called = {}
+
+    def spy(path):
+        called["path"] = path
+        return True
+
+    monkeypatch.setattr("kitealgo.auth.restrict_to_owner", spy)
+    store = TokenStore(settings)
+    store.save("tok-123")
+
+    assert called.get("path") == store.path
+
+
+def test_token_is_still_saved_if_hardening_fails(settings, monkeypatch):
+    """A permissions failure must not lose the token — that would break login."""
+    monkeypatch.setattr("kitealgo.auth.restrict_to_owner", lambda path: False)
+    store = TokenStore(settings)
+    store.save("tok-123")
+    assert store.load() == "tok-123"
 
 
 def test_clear_removes_the_cache(settings):

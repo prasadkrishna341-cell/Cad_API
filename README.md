@@ -27,8 +27,10 @@ stand in the way:
 | **Kill switch** | Once the day's loss crosses `KITE_MAX_DAILY_LOSS_PCT`, open positions are flattened and no new entry is accepted until the next session. |
 
 Secrets never get committed (`.gitignore` covers `.env` and the state directory),
-the cached access token is written `0600`, and the logger redacts anything that
-looks like a key or token before it reaches a log file.
+the cached access token is locked to your user account (`0600` on macOS and
+Linux; inherited permissions dropped via `icacls` on Windows, since POSIX mode
+bits do not exist there), and the logger redacts anything that looks like a key
+or token before it reaches a log file.
 
 ---
 
@@ -272,7 +274,7 @@ strategies, risk and backtests are testable without network or credentials.
 ## Tests
 
 ```bash
-python -m pytest          # 175 tests, no network required
+python -m pytest          # 177 tests, no network required
 ```
 
 Coverage includes position accounting through a flip, every risk gate, RSI

@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import stat
+import subprocess
 import webbrowser
 from datetime import datetime, time as dtime, timedelta
 from typing import Optional
@@ -73,6 +75,37 @@ def extract_request_token(text: str) -> str:
     raise AuthError(f"Could not find a request_token in {text!r}")
 
 
+def restrict_to_owner(path: Path) -> bool:
+    """Make a file readable only by its owner. Returns True if that was achieved.
+
+    POSIX mode bits do not exist on Windows — `chmod` there can only toggle the
+    read-only flag and silently ignores everything else — so the equivalent is
+    done with `icacls`: drop inherited permissions and grant the current user
+    alone. Best effort; a failure is logged rather than raised, because losing
+    the token beats crashing the login.
+    """
+    if os.name != "nt":
+        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        return True
+
+    user = os.environ.get("USERNAME") or os.environ.get("USER")
+    if not user:
+        log.warning("Cannot identify the current user; leaving %s permissions as-is", path)
+        return False
+    try:
+        result = subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("Could not restrict permissions on %s: %s", path, exc)
+        return False
+    if result.returncode != 0:
+        log.warning("icacls could not restrict %s: %s", path, result.stderr.strip())
+        return False
+    return True
+
+
 class TokenStore:
     """Reads/writes the cached access token, with expiry awareness."""
 
@@ -113,7 +146,7 @@ class TokenStore:
         }
         self.path.write_text(json.dumps(payload, indent=2))
         # Token grants full account access — keep it owner-readable only.
-        self.path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        restrict_to_owner(self.path)
         log.info("Access token cached at %s (valid until %s)",
                  self.path, token_expiry(datetime.fromisoformat(payload["issued_at"])))
 
