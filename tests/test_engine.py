@@ -211,3 +211,29 @@ def test_book_fill_matches_the_right_order(settings, infy, tmp_path):
 
     engine._book_fill(order, signal, reason)
     assert engine.portfolio.positions[infy.instrument_token].quantity == 200
+
+
+def test_orders_are_stamped_with_the_session_date_not_today(settings, infy, tmp_path):
+    """Regression: records must carry the engine's session date.
+
+    This was previously stamped with wall-clock `today`, which only looked
+    correct while the test happened to run on the same calendar day.
+    """
+    from datetime import date
+
+    broker = PaperBroker(slippage_bps=0.0)
+    broker.set_price(infy, 100.0)
+    strategy = SignalOnceStrategy([infy], stop=95.0)
+    engine = TradingEngine(strategy, broker, settings, store=Store(tmp_path / "t.db"))
+
+    # The engine takes its session date from the tick stream, so drive it with
+    # a tick dated on a past session rather than setting the date by hand.
+    session = DURING.date()
+    assert session != date.today(), "fixture date must differ from today to be meaningful"
+
+    engine._start_session(session)
+    engine.on_tick(Tick(infy.instrument_token, 100.0, DURING))
+
+    assert engine.store.orders_for(session), "order not filed under the session date"
+    assert engine.store.fills_for(session), "fill not filed under the session date"
+    assert engine.store.orders_for(date.today()) == []

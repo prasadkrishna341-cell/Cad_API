@@ -174,6 +174,72 @@ def cmd_run(args, settings: Settings) -> int:
     return 0
 
 
+def cmd_holidays(args, settings: Settings) -> int:
+    """Show, seed or derive the NSE trading-holiday calendar."""
+    from .holidays import HolidayCalendar
+
+    calendar = HolidayCalendar.load(settings.holiday_file)
+
+    if args.refresh:
+        # Derive the real calendar from daily candles: any weekday with no
+        # candle for a liquid index was a day the exchange did not trade.
+        from .auth import build_kite_client
+        from .data.historical import HistoricalData
+
+        kite = build_kite_client(settings)
+        instruments = _resolve_instruments(settings, [args.reference], args.exchange, kite)
+        to_date = date.today()
+        from_date = to_date - timedelta(days=args.days)
+
+        print(f"Deriving holidays from {args.reference} daily candles "
+              f"({from_date} .. {to_date}) ...")
+        bars = HistoricalData(kite, settings).fetch(
+            instruments[0], from_date, to_date, "day"
+        )
+        if not bars:
+            print("No candles returned — cannot derive the calendar. "
+                  "Historical data needs the paid add-on on your Kite app.")
+            return 1
+        derived = HolidayCalendar.derive_from_bars(bars, from_date, min(to_date, bars[-1].timestamp.date()))
+        # Name what we can from the fixed-date list; the rest stay generic.
+        for year in range(from_date.year, to_date.year + 1):
+            from .holidays import fixed_holidays_for
+            for when, name in fixed_holidays_for(year).items():
+                if derived.is_holiday(when):
+                    derived.add(when, name)
+        derived.save(settings.holiday_file)
+        calendar = derived
+        print(f"Derived {len(calendar)} holidays from {len(bars):,} candles.")
+
+    if args.seed:
+        years = [int(y) for y in args.seed.split(",")]
+        calendar.add_fixed_holidays(*years)
+        calendar.save(settings.holiday_file)
+        print(f"Seeded fixed-date holidays for {', '.join(map(str, years))}.")
+
+    if args.add:
+        for entry in args.add:
+            when, _, name = entry.partition("=")
+            calendar.add(date.fromisoformat(when.strip()), name.strip() or "holiday")
+        calendar.save(settings.holiday_file)
+        print(f"Added {len(args.add)} holiday(s).")
+
+    if not len(calendar):
+        print(f"\nNo holidays recorded ({settings.holiday_file}).")
+        print("Weekends are still skipped. To populate:")
+        print("  --refresh          derive the real calendar from Kite candles")
+        print("  --seed 2026,2027   add fixed-date national holidays only")
+        return 0
+
+    upcoming = [d for d in sorted(calendar.to_dict()) if d >= date.today().isoformat()]
+    print(f"\n{len(calendar)} holiday(s) in {settings.holiday_file}")
+    print(f"{len(upcoming)} still ahead:\n")
+    for day in upcoming[:args.limit]:
+        when = date.fromisoformat(day)
+        print(f"  {day}  {when:%a}  {calendar.name_for(when)}")
+    return 0
+
+
 def cmd_status(args, settings: Settings) -> int:
     from .store import Store
 
@@ -266,6 +332,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-seconds", type=float, default=None, help="stop after N seconds")
     p.add_argument("--yes", action="store_true", help="skip the live-mode confirmation prompt")
     p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("holidays", help="show / derive the NSE trading-holiday calendar")
+    p.add_argument("--refresh", action="store_true",
+                   help="derive the real calendar from Kite daily candles")
+    p.add_argument("--reference", default="NIFTY 50",
+                   help="instrument whose candles define trading days")
+    p.add_argument("--exchange", default="NSE")
+    p.add_argument("--days", type=int, default=730, help="how far back to derive")
+    p.add_argument("--seed", default=None,
+                   help="comma separated years to add fixed-date holidays for")
+    p.add_argument("--add", action="append", default=[],
+                   help="add one, as YYYY-MM-DD=Name")
+    p.add_argument("--limit", type=int, default=30)
+    p.set_defaults(func=cmd_holidays)
 
     p = sub.add_parser("status", help="show today's orders and PnL")
     p.add_argument("--days", type=int, default=10)

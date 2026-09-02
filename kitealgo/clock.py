@@ -11,6 +11,7 @@ from datetime import date, datetime, time as dtime
 from typing import Optional
 
 from .config import IST, Settings
+from .holidays import HolidayCalendar
 
 # NSE/BSE regular equity session.
 MARKET_OPEN = dtime(9, 15)
@@ -40,22 +41,37 @@ def is_market_open(moment: Optional[datetime] = None) -> bool:
 
 
 class SessionClock:
-    """Answers the three questions the engine asks each loop."""
+    """Answers the three questions the engine asks each loop.
 
-    def __init__(self, settings: Settings) -> None:
+    A `HolidayCalendar` may be supplied; when omitted, one is loaded from the
+    state directory if present. With no calendar at all the clock falls back to
+    weekends-only, which is what it did before holidays existed.
+    """
+
+    def __init__(
+        self, settings: Settings, holidays: Optional[HolidayCalendar] = None
+    ) -> None:
         self.settings = settings
+        self.holidays = (
+            holidays if holidays is not None
+            else HolidayCalendar.load(settings.holiday_file)
+        )
+
+    def is_trading_day(self, moment: Optional[datetime] = None) -> bool:
+        """A weekday the exchange is actually open."""
+        return self.holidays.is_trading_day(as_ist(moment).date())
 
     def can_enter(self, moment: Optional[datetime] = None) -> bool:
         """Inside the window where new positions may be opened."""
         moment = as_ist(moment)
-        if not is_weekday(moment):
+        if not self.is_trading_day(moment):
             return False
         return self.settings.trade_start <= moment.time() < self.settings.trade_end
 
     def should_square_off(self, moment: Optional[datetime] = None) -> bool:
         """Past the intraday square-off time — flatten everything."""
         moment = as_ist(moment)
-        if not is_weekday(moment):
+        if not self.is_trading_day(moment):
             return False
         return moment.time() >= self.settings.square_off
 
@@ -69,6 +85,8 @@ class SessionClock:
         moment = as_ist(moment)
         if not is_weekday(moment):
             return "weekend — market closed"
+        if self.holidays.is_holiday(moment.date()):
+            return f"trading holiday ({self.holidays.name_for(moment.date())})"
         if moment.time() < MARKET_OPEN:
             return f"pre-open (opens {MARKET_OPEN:%H:%M})"
         if self.should_square_off(moment):

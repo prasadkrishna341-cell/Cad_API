@@ -219,10 +219,12 @@ class TradingEngine:
             self.broker.place_order(order)
         except BrokerError as exc:
             log.error("Order rejected for %s: %s", signal_obj.instrument.tradingsymbol, exc)
-            self.store.record_order(order, self.broker.mode, self.strategy.name, reason)
+            self.store.record_order(order, self.broker.mode, self.strategy.name,
+                                    reason, self._session)
             return None
 
-        self.store.record_order(order, self.broker.mode, self.strategy.name, reason)
+        self.store.record_order(order, self.broker.mode, self.strategy.name,
+                                reason, self._session)
 
         # Paper fills are immediate; live fills arrive via postback/polling.
         if order.is_complete:

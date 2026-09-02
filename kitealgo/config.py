@@ -167,6 +167,10 @@ class Settings:
     def cache_dir(self) -> Path:
         return self.state_dir / "cache"
 
+    @property
+    def holiday_file(self) -> Path:
+        return self.state_dir / "holidays.json"
+
     def ensure_dirs(self) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)

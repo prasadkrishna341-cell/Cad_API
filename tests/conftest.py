@@ -3,6 +3,14 @@ import tempfile
 
 import pytest
 
+import kitealgo.config as _config
+
+# A developer's real .env must never bleed into the suite — otherwise these
+# tests pass or fail depending on whose machine they run on.
+_config._load_dotenv_if_present = lambda: None
+for _key in ("KITE_API_KEY", "KITE_API_SECRET", "KITE_REDIRECT_URL"):
+    os.environ.pop(_key, None)
+
 # Isolate every test run from the developer's real .env and state directory.
 os.environ.setdefault("KITE_STATE_DIR", tempfile.mkdtemp(prefix="kitealgo-test-"))
 for key in ("KITE_TRADING_MODE", "KITE_LIVE_CONFIRM"):

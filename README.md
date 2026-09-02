@@ -74,6 +74,9 @@ python -m kitealgo.cli backtest \
 # paper-trade live ticks (default mode — no real orders)
 python -m kitealgo.cli run --symbols INFY --strategy orb --bar-seconds 300
 
+# build the trading-holiday calendar from Kite's own candles
+python -m kitealgo.cli holidays --refresh
+
 # what happened today
 python -m kitealgo.cli status --account
 ```
@@ -98,6 +101,41 @@ Backtest output:
   Max drawdown       :       848.86  (0.42%)
 ==========================================================
 ```
+
+---
+
+## Trading holidays
+
+The exchange closes for weekends (handled automatically) and ~15 public holidays
+a year. Most Indian market holidays follow lunar calendars and move every year,
+so **this project does not ship a hardcoded guess at them**. Instead the real
+calendar is derived from Kite's own data:
+
+```bash
+python -m kitealgo.cli holidays --refresh     # authoritative, self-updating
+```
+
+That fetches daily candles for an index and treats any weekday with no candle as
+a day the exchange did not trade — which reproduces NSE's list exactly, without
+anyone typing dates from memory. The result is cached in
+`.kitealgo/holidays.json`.
+
+If you don't have the historical-data add-on:
+
+```bash
+python -m kitealgo.cli holidays --seed 2026,2027        # fixed-date national holidays only
+python -m kitealgo.cli holidays --add 2026-11-09=Diwali # add movable ones by hand
+python -m kitealgo.cli holidays                         # show what's recorded
+```
+
+`--seed` adds only holidays on fixed calendar dates (Republic Day, Independence
+Day, Gandhi Jayanti, Christmas, Maharashtra Day), skipping any that fall on a
+weekend. Everything lunar you must add yourself or get via `--refresh`.
+
+With no calendar at all the engine still skips weekends — it just won't know
+about holidays. Verify against
+[NSE's official list](https://www.nseindia.com/resources/exchange-communication-holidays)
+before relying on this in live trading.
 
 ---
 
@@ -218,6 +256,7 @@ charged on both sides.
 | `data/` | chunked historical fetch, websocket stream, tick→bar aggregation |
 | `indicators.py` | incremental SMA / EMA / RSI / ATR / crossover |
 | `strategy/` | `Strategy` base plus the two examples |
+| `holidays.py` | trading-holiday calendar, derived from real candles |
 | `risk.py` | sizing, caps, kill switch, exit rules |
 | `portfolio.py` | positions, mark-to-market, PnL |
 | `engine.py` | the live loop |
@@ -233,7 +272,7 @@ strategies, risk and backtests are testable without network or credentials.
 ## Tests
 
 ```bash
-python -m pytest          # 157 tests, no network required
+python -m pytest          # 175 tests, no network required
 ```
 
 Coverage includes position accounting through a flip, every risk gate, RSI
@@ -255,8 +294,13 @@ cumulative-volume deltas, and the live-mode gate.
 
 ### Known limits
 
-- **No holiday calendar.** Weekends are handled; NSE trading holidays are not.
-  The engine will simply see no ticks.
+- **The holiday calendar needs populating once** (`holidays --refresh`, or
+  `--seed` plus manual entries). Until then the engine skips weekends only.
+- **The live order path has never run against real Kite.** Its safety gating is
+  unit-tested, but no order has been placed, synced or rejected against the
+  actual API. Paper mode is thoroughly exercised; live is not.
+- **Neither example strategy has been validated on real market data** — only on
+  synthetic series built to have known properties.
 - **Historical data needs the paid add-on** on your Kite Connect app; without it
   `backtest` returns a permission error.
 - **Live fills are recorded optimistically.** `KiteBroker.sync_order` polls the
