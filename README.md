@@ -274,7 +274,7 @@ strategies, risk and backtests are testable without network or credentials.
 ## Tests
 
 ```bash
-python -m pytest          # 177 tests, no network required
+python -m pytest          # 179 tests, no network required
 ```
 
 Coverage includes position accounting through a flip, every risk gate, RSI

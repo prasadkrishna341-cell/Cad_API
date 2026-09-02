@@ -133,3 +133,70 @@ def test_empty_result_metrics_do_not_divide_by_zero():
     assert result.expectancy == 0.0
     assert result.max_drawdown == 0.0
     assert "BACKTEST RESULT" in result.format_report()
+
+
+class LoseALittleDailyStrategy(Strategy):
+    """Buys the first bar of each session and closes before the session ends."""
+    name = "lose_daily"
+
+    def _setup(self):
+        self._day = None
+        self._bar_no = 0
+
+    def on_day_start(self, session_date):
+        self._day = None
+        self._bar_no = 0
+
+    def on_bar(self, bar, position=None):
+        day = bar.timestamp.date()
+        if self._day != day:
+            self._day, self._bar_no = day, 0
+        self._bar_no += 1
+
+        if self._bar_no == 1:
+            return [Signal(self.instruments[0], Side.BUY, reason="daily entry")]
+        if self._bar_no == 5 and position is not None and position.is_open:
+            return [self.exit(position, "end of day")]
+        return []
+
+
+def test_drawdown_accumulates_across_sessions(settings, infy):
+    """Regression: the equity curve must span the whole backtest.
+
+    The portfolio zeroes realised PnL each session so the live engine's daily
+    kill switch works. The backtester built its equity curve from that, so a
+    campaign that bled for weeks reported only its worst single-day dip.
+
+    Losses here are kept small on purpose — a fixture that loses enough to trip
+    the daily kill switch stops trading and never produces five losing sessions.
+    """
+    token = infy.instrument_token
+    bars = []
+    price = 1000.0
+    for day in range(5):                                  # Mon-Fri
+        start = datetime(2026, 9, 7 + day, 9, 25, tzinfo=IST)
+        for i in range(6):
+            open_ = price
+            price -= 2.0
+            bars.append(Bar(start + timedelta(minutes=5 * i),
+                            open_, open_ + 0.5, price - 0.5, price, 1000, token))
+
+    result = Backtester(LoseALittleDailyStrategy([infy]), settings, slippage_bps=0).run(bars)
+
+    assert len(result.trades) == 5, "expected one round trip per session"
+    assert result.net_pnl < 0, "this fixture is meant to lose money"
+
+    # Equity must end at capital + the whole campaign's PnL, not back at capital.
+    final_equity = result.equity_curve[-1][1]
+    assert final_equity == pytest.approx(settings.risk.capital + result.net_pnl, abs=1.0)
+
+    # A steady bleed means drawdown covers essentially the entire loss.
+    assert result.max_drawdown >= abs(result.net_pnl) * 0.9
+
+
+def test_equity_curve_is_flat_before_the_first_trade(settings, infy):
+    strategy = BuyOnceStrategy([infy])
+    result = Backtester(strategy, settings, slippage_bps=0).run(
+        make_bars([100, 100, 100], infy.instrument_token)
+    )
+    assert result.equity_curve[0][1] == pytest.approx(settings.risk.capital)

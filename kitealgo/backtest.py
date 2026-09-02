@@ -200,6 +200,13 @@ class Backtester:
         self._open_trades: dict[int, Trade] = {}
         self._pending: list[Signal] = []
         self._session: Optional[date] = None
+        # The portfolio zeroes realised PnL and charges at each new session so
+        # the live engine's daily kill switch works. A backtest spans many
+        # sessions, so campaign-level PnL has to be accumulated here or the
+        # equity curve resets every morning and drawdown only ever measures
+        # within one day.
+        self._cumulative_realised = 0.0
+        self._cumulative_charges = 0.0
 
     # -- helpers ----------------------------------------------------------
     def _reject(self, reason: str) -> None:
@@ -234,6 +241,8 @@ class Backtester:
         fill = self.broker.fills()[-1]
         charges = self._charges(fill.value)
         realised = self.portfolio.apply_fill(fill, charges=charges)
+        self._cumulative_realised += realised
+        self._cumulative_charges += charges
         self._book_trade(fill, realised, charges, reason)
 
         position = self.portfolio.position(instrument)
@@ -293,12 +302,19 @@ class Backtester:
                 for signal in self.strategy.on_bar(bar, position):
                     self._pending.append(signal)
 
-            self.result.equity_curve.append(
-                (when, self.settings.risk.capital + self.portfolio.total_pnl)
-            )
+            self.result.equity_curve.append((when, self._equity()))
 
         self._close_out(bars[-1] if bars else None)
         return self.result
+
+    def _equity(self) -> float:
+        """Account value across the whole backtest, not just today."""
+        return (
+            self.settings.risk.capital
+            + self._cumulative_realised
+            - self._cumulative_charges
+            + self.portfolio.unrealised_pnl
+        )
 
     def _fill_pending(self, bar: Bar, when: datetime) -> None:
         """Signals from the previous bar execute at this bar's open."""
