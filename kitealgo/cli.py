@@ -103,11 +103,19 @@ def cmd_backtest(args, settings: Settings) -> int:
     from .data.historical import HistoricalData
     from .strategy import get_strategy
 
+    from .clock import SessionClock
+
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     kite = build_kite_client(settings)
     instruments = _resolve_instruments(settings, symbols, args.exchange, kite)
 
-    to_date = date.today()
+    # End at the last completed session by default: today's final candle is
+    # still forming, so including it makes repeat runs disagree by a few rupees
+    # and quietly poisons any A/B comparison of parameters.
+    if args.include_today:
+        to_date = date.today()
+    else:
+        to_date = SessionClock(settings).last_completed_session()
     from_date = to_date - timedelta(days=args.days)
     history = HistoricalData(kite, settings)
 
@@ -319,6 +327,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--days", type=int, default=60)
     p.add_argument("--slippage", type=float, default=2.0, help="basis points")
     p.add_argument("--param", action="append", default=[], help="strategy param, key=value")
+    p.add_argument("--include-today", action="store_true",
+                   help="include the in-progress session (makes runs non-reproducible)")
     p.add_argument("--trades", action="store_true", help="list every trade")
     p.add_argument("--json", action="store_true", help="also print metrics as JSON")
     p.set_defaults(func=cmd_backtest)

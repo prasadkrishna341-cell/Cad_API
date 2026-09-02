@@ -49,6 +49,16 @@ Create an app at <https://developers.kite.trade/apps> to get your `api_key` and
 (`http://127.0.0.1:5000/callback` works out of the box — the login command spins
 up a throwaway server on that port to catch the token automatically).
 
+### Updating
+
+```bash
+python update.py              # fetch the latest code
+python update.py --dry-run    # see what would change first
+```
+
+Your `.env`, access token, cached candles and database are never in the
+download, so they survive an update untouched.
+
 ### Log in
 
 ```bash
@@ -232,8 +242,8 @@ untouched in a backtest and live.
 
 ## Backtesting honesty
 
-Two rules are enforced, because breaking either makes results look great and
-trade badly:
+Three rules are enforced, because breaking any of them makes results look great
+and trade badly:
 
 1. **No look-ahead.** A signal raised on a bar fills at the **next** bar's open,
    never that bar's close.
@@ -241,8 +251,22 @@ trade badly:
    and your target, the **stop** is assumed to have hit first. OHLC cannot tell
    you which came first, so the framework takes the unfavourable reading.
 
+3. **No in-progress session.** Backtests end at the last *completed* session,
+   because today's final candle is still forming — including it makes the same
+   command return slightly different numbers each run, which quietly poisons any
+   comparison between two parameter sets. Pass `--include-today` if you want it
+   anyway.
+
 Slippage (default 2 bps) and Zerodha's brokerage (0.03% capped at ₹20/order) are
 charged on both sides.
+
+### Reading the result
+
+`Max drawdown` is the number that decides whether a strategy is tradeable by a
+human — it is the worst peak-to-trough fall in account value across the whole
+run, and it is routinely much larger than the final loss. A strategy that ends
+down 14% may have been down 17% at its worst, and almost nobody keeps running a
+system through that.
 
 ---
 
@@ -274,7 +298,7 @@ strategies, risk and backtests are testable without network or credentials.
 ## Tests
 
 ```bash
-python -m pytest          # 179 tests, no network required
+python -m pytest          # 198 tests, no network required
 ```
 
 Coverage includes position accounting through a flip, every risk gate, RSI

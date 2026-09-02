@@ -7,7 +7,7 @@ about timezones, and so tests can inject a fixed 'now' instead of waiting for
 
 from __future__ import annotations
 
-from datetime import date, datetime, time as dtime
+from datetime import date, datetime, time as dtime, timedelta
 from typing import Optional
 
 from .config import IST, Settings
@@ -80,6 +80,27 @@ class SessionClock:
 
     def session_date(self, moment: Optional[datetime] = None) -> date:
         return as_ist(moment).date()
+
+    def last_completed_session(self, moment: Optional[datetime] = None) -> date:
+        """The most recent date whose trading session has finished.
+
+        Today counts only once the market has closed. Anything earlier walks
+        back past weekends and holidays. Backtests default to ending here so
+        they never include a candle that is still forming — otherwise the same
+        command gives slightly different numbers each time it is run, and
+        comparing two parameter sets becomes guesswork.
+        """
+        moment = as_ist(moment)
+        candidate = moment.date()
+        if not (
+            self.holidays.is_trading_day(candidate) and moment.time() >= MARKET_CLOSE
+        ):
+            candidate -= timedelta(days=1)
+        for _ in range(30):
+            if self.holidays.is_trading_day(candidate):
+                return candidate
+            candidate -= timedelta(days=1)
+        raise RuntimeError("No completed session found in the last 30 days")
 
     def describe(self, moment: Optional[datetime] = None) -> str:
         moment = as_ist(moment)

@@ -61,3 +61,57 @@ def test_describe_is_human_readable(clock):
 
 def test_now_ist_is_timezone_aware():
     assert now_ist().tzinfo is not None
+
+
+# -- last completed session (backtest reproducibility) ------------------------
+def _clock_with_holidays(settings):
+    from kitealgo.holidays import HolidayCalendar
+    return SessionClock(settings, HolidayCalendar().add_fixed_holidays(2026))
+
+
+def test_today_counts_only_after_the_market_closes(settings):
+    from datetime import date as _date, datetime
+    clock = _clock_with_holidays(settings)
+
+    # Wednesday 2026-09-02, mid-session: today's candles are still forming, so
+    # the last completed session is Tuesday the 1st.
+    mid_session = datetime(2026, 9, 2, 10, 20, tzinfo=IST)
+    assert clock.last_completed_session(mid_session) == _date(2026, 9, 1)
+
+    # Same day at 16:00, after the 15:30 close: today is now complete.
+    after_close = datetime(2026, 9, 2, 16, 0, tzinfo=IST)
+    assert clock.last_completed_session(after_close) == _date(2026, 9, 2)
+
+
+def test_weekend_walks_back_to_friday(settings):
+    from datetime import datetime
+    clock = _clock_with_holidays(settings)
+    sunday = datetime(2026, 9, 6, 12, 0, tzinfo=IST)
+    assert clock.last_completed_session(sunday).weekday() == 4      # Friday
+    assert clock.last_completed_session(sunday) == datetime(2026, 9, 4).date()
+
+
+def test_before_the_open_uses_the_previous_session(settings):
+    from datetime import datetime
+    clock = _clock_with_holidays(settings)
+    monday_pre_open = datetime(2026, 9, 7, 9, 0, tzinfo=IST)
+    assert clock.last_completed_session(monday_pre_open) == datetime(2026, 9, 4).date()
+
+
+def test_holidays_are_skipped(settings):
+    from datetime import datetime
+    clock = _clock_with_holidays(settings)
+    # 2026-10-02 is Gandhi Jayanti, a Friday — step back to Thursday the 1st.
+    after_holiday = datetime(2026, 10, 2, 16, 0, tzinfo=IST)
+    assert clock.last_completed_session(after_holiday) == datetime(2026, 10, 1).date()
+
+
+def test_result_is_always_a_trading_day(settings):
+    from datetime import datetime, timedelta
+    clock = _clock_with_holidays(settings)
+    start = datetime(2026, 9, 1, 12, 0, tzinfo=IST)
+    for offset in range(45):
+        when = start + timedelta(days=offset)
+        session = clock.last_completed_session(when)
+        assert clock.holidays.is_trading_day(session)
+        assert session <= when.date()
