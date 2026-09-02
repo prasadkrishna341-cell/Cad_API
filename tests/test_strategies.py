@@ -158,3 +158,36 @@ def test_orb_stays_flat_inside_the_range(infy):
         Bar(OPEN + timedelta(minutes=20), 101, 101.5, 100, 100.5, 0, token),
     ]
     assert collect(strategy, bars) == []
+
+
+def test_exit_on_cross_false_holds_through_the_opposite_cross(infy):
+    """The crossover exit caps winners; switching it off must let them run."""
+    prices = ([110, 109, 108, 107, 106, 105, 104, 103, 102, 101, 100]
+              + [102, 104, 106, 108, 110, 112, 114, 116]
+              + [114, 112, 110, 108, 106, 104])
+    bars = bars_from(prices, infy.instrument_token)
+
+    with_exit = EmaCrossoverStrategy([infy], fast_period=3, slow_period=5,
+                                     atr_period=3, exit_on_cross=True)
+    without = EmaCrossoverStrategy([infy], fast_period=3, slow_period=5,
+                                   atr_period=3, exit_on_cross=False)
+
+    assert any(s.is_exit for s in collect(with_exit, bars))
+    assert not any(s.is_exit for s in collect(without, bars))
+
+
+def test_exit_on_cross_false_still_enters(infy):
+    """Disabling the exit must not disable the entry signal."""
+    prices = [110, 109, 108, 107, 106, 105, 104, 103, 102, 101, 100, 102, 104, 106, 108]
+    strategy = EmaCrossoverStrategy([infy], fast_period=3, slow_period=5,
+                                    atr_period=3, exit_on_cross=False)
+    entries = [s for s in collect(strategy, bars_from(prices, infy.instrument_token))
+               if not s.is_exit]
+    assert entries and entries[0].side is Side.BUY
+    assert entries[0].stop_loss is not None and entries[0].target is not None
+
+
+def test_exit_on_cross_defaults_to_true(infy):
+    strategy = EmaCrossoverStrategy([infy])
+    assert strategy.exit_on_cross is True
+    assert strategy.params["exit_on_cross"] is True

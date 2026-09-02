@@ -192,7 +192,13 @@ Backtest them on your own instruments before they ever see real capital.
 
 - **`ema_crossover`** — fast/slow EMA cross, ATR-based stop and target.
   Params: `fast_period`, `slow_period`, `atr_period`, `atr_multiple`,
-  `reward_multiple`, `allow_short`.
+  `reward_multiple`, `allow_short`, `exit_on_cross`.
+
+  Note `exit_on_cross` (default `True`): closing on the opposite crossover cuts
+  winners short while stops still take their full loss, so realised
+  reward:risk lands far below whatever `reward_multiple` asks for — measured at
+  0.98:1 against a requested 3:1 on a year of NSE large caps. Set it to `False`
+  to hold until the stop or target instead.
 - **`orb`** — opening range breakout. The first `range_minutes` define a box;
   a close beyond it is the entry, the far side of the box is the stop. One trade
   per instrument per day. Params: `range_minutes`, `buffer_pct`,
@@ -298,7 +304,7 @@ strategies, risk and backtests are testable without network or credentials.
 ## Tests
 
 ```bash
-python -m pytest          # 198 tests, no network required
+python -m pytest          # 201 tests, no network required
 ```
 
 Coverage includes position accounting through a flip, every risk gate, RSI

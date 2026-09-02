@@ -33,6 +33,7 @@ class EmaCrossoverStrategy(Strategy):
         atr_multiple: float = 2.0,
         reward_multiple: float = 2.0,
         allow_short: bool = False,
+        exit_on_cross: bool = True,
         **params,
     ) -> None:
         if fast_period >= slow_period:
@@ -45,11 +46,12 @@ class EmaCrossoverStrategy(Strategy):
         self.atr_multiple = atr_multiple
         self.reward_multiple = reward_multiple
         self.allow_short = allow_short
+        self.exit_on_cross = exit_on_cross
         super().__init__(
             instruments,
             fast_period=fast_period, slow_period=slow_period, atr_period=atr_period,
             atr_multiple=atr_multiple, reward_multiple=reward_multiple,
-            allow_short=allow_short, **params,
+            allow_short=allow_short, exit_on_cross=exit_on_cross, **params,
         )
 
     def _setup(self) -> None:
@@ -93,6 +95,8 @@ class EmaCrossoverStrategy(Strategy):
             # Close a short first; the engine applies exits before entries, so
             # emitting both here reverses the position on this bar.
             if holding and position.is_short:
+                if not self.exit_on_cross:
+                    return []       # let the stop or target close it instead
                 signals.append(self.exit(position, "EMA crossed up while short"))
             elif holding:
                 return []  # already long, nothing to do
@@ -109,6 +113,8 @@ class EmaCrossoverStrategy(Strategy):
 
         # direction == "down"
         if holding and position.is_long:
+            if not self.exit_on_cross:
+                return []           # let the stop or target close it instead
             signals.append(self.exit(position, "EMA crossed down while long"))
         elif holding:
             return []  # already short
