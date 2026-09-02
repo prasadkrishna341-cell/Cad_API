@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kitealgo"
+version = "0.1.0"
+description = "Safety-first algorithmic trading framework for Zerodha Kite Connect"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "kiteconnect>=5.0,<6",
+    "pandas>=2.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+kitealgo = "kitealgo.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["kitealgo*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["error::DeprecationWarning:kitealgo.*"]

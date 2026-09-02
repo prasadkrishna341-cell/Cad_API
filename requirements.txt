@@ -1,0 +1,6 @@
+kiteconnect>=5.0,<6
+pandas>=2.0
+python-dotenv>=1.0
+
+# dev / test
+pytest>=7.4
